@@ -372,7 +372,12 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 	}
 
 	redirectURI := fmt.Sprintf("http://localhost:%d/oauth-callback", antigravity.CallbackPort)
-	authURL := authSvc.BuildAuthURL(state, redirectURI)
+	authURL, codeVerifier, errAuthURL := authSvc.BuildAuthURL(state, redirectURI)
+	if errAuthURL != nil {
+		log.Errorf("Failed to build antigravity auth URL: %v", errAuthURL)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to build authorization url"})
+		return
+	}
 
 	RegisterOAuthSession(state, "antigravity")
 
@@ -435,7 +440,7 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		tokenResp, errToken := authSvc.ExchangeCodeForTokens(ctx, authCode, redirectURI)
+		tokenResp, errToken := authSvc.ExchangeCodeForTokens(ctx, authCode, redirectURI, codeVerifier)
 		if errToken != nil {
 			log.Errorf("Failed to exchange token: %v", errToken)
 			SetOAuthSessionError(state, "Failed to exchange token")
@@ -463,12 +468,16 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 		}
 
 		projectID := ""
+		tier := ""
+		region := ""
 		if accessToken != "" {
-			fetchedProjectID, errProject := authSvc.FetchProjectID(ctx, accessToken)
+			result, errProject := authSvc.FetchProjectIDWithTier(ctx, accessToken)
 			if errProject != nil {
 				log.Warnf("antigravity: failed to fetch project ID: %v", errProject)
 			} else {
-				projectID = fetchedProjectID
+				projectID = strings.TrimSpace(result.ProjectID)
+				tier = strings.TrimSpace(result.Tier)
+				region = strings.TrimSpace(result.Region)
 				log.Infof("antigravity: obtained project ID %s", util.HideAPIKey(projectID))
 			}
 		}
@@ -487,6 +496,12 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 		}
 		if projectID != "" {
 			metadata["project_id"] = projectID
+		}
+		if tier != "" {
+			metadata["user_tier"] = tier
+		}
+		if region != "" {
+			metadata["region"] = region
 		}
 
 		fileName := antigravity.CredentialFileName(email)
