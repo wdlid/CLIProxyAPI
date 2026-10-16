@@ -22,6 +22,8 @@ env:
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -29,18 +31,44 @@ jobs:
           fetch-tags: true
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref_name }}
 
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" == v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            # Branch build: publish a prerelease under an auto-generated tag.
+            tag="baic-r${GITHUB_RUN_NUMBER}-$(git rev-parse --short HEAD)"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Release tag: ${tag}"
+
+      - name: Create branch prerelease
+        if: ${{ !startsWith(steps.tag.outputs.tag, 'v') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes_file="$(mktemp)"
+          {
+            printf 'Automated build of branch `%s` at %s.\n\n## Recent commits\n\n' "$GITHUB_REF_NAME" "$(git rev-parse --short HEAD)"
+            git log -20 --no-merges --pretty=format:'- %s (%h)'
+            printf '\n'
+          } > "$notes_file"
+          gh release create "$RELEASE_TAG" --target "$(git rev-parse HEAD)" \
+            --title "$RELEASE_TAG" --notes-file "$notes_file" --prerelease
+
       - name: Create release
+        if: ${{ startsWith(steps.tag.outputs.tag, 'v') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping GitHub release creation because '$GITHUB_REF_NAME' is not a tag."
-            echo "This workflow is still building from branch '$GITHUB_REF_NAME'."
-            exit 0
-          fi
 
           release_notes_file="$(mktemp)"
           generated_notes_file="$(mktemp)"
@@ -111,6 +139,8 @@ jobs:
   build-hosted:
     name: build ${{ matrix.target }}
     needs: prepare-release
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -173,7 +203,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_version_raw="${GITHUB_REF_NAME#v}"
+          release_version_raw="${RELEASE_TAG#v}"
           release_version="${release_version_raw//\//-}"
           echo "RELEASE_VERSION=${release_version}" >> "$GITHUB_ENV"
           echo "COMMIT=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
@@ -223,10 +253,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping GitHub release upload because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           shopt -s nullglob
           assets=(dist/CLIProxyAPI_*.tar.gz dist/CLIProxyAPI_*.zip)
@@ -235,7 +261,7 @@ jobs:
             printf '%s\n' "${assets[@]}" >&2
             exit 1
           fi
-          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
       - name: Refresh release checksums
         continue-on-error: true
@@ -245,14 +271,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping release checksum refresh because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           tmp_dir="$(mktemp -d)"
           trap 'rm -rf "$tmp_dir"' EXIT
-          gh release download "$GITHUB_REF_NAME" \
+          gh release download "$RELEASE_TAG" \
             --pattern 'CLIProxyAPI_*.tar.gz' \
             --pattern 'CLIProxyAPI_*.zip' \
             --dir "$tmp_dir" \
@@ -271,11 +293,13 @@ jobs:
               shasum -a 256 "${archives[@]}" | sort -k2 > checksums.txt
             fi
           )
-          gh release upload "$GITHUB_REF_NAME" "$tmp_dir/checksums.txt" --clobber
+          gh release upload "$RELEASE_TAG" "$tmp_dir/checksums.txt" --clobber
 
   build-linux-glibc:
     name: build linux-${{ matrix.goarch }} glibc
     needs: prepare-release
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -314,7 +338,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_version_raw="${GITHUB_REF_NAME#v}"
+          release_version_raw="${RELEASE_TAG#v}"
           release_version="${release_version_raw//\//-}"
           echo "RELEASE_VERSION=${release_version}" >> "$GITHUB_ENV"
           echo "COMMIT=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
@@ -383,10 +407,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping GitHub release upload because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           shopt -s nullglob
           assets=(dist/CLIProxyAPI_*.tar.gz)
@@ -395,7 +415,7 @@ jobs:
             printf '%s\n' "${assets[@]}" >&2
             exit 1
           fi
-          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
       - name: Refresh release checksums
         continue-on-error: true
@@ -405,14 +425,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping release checksum refresh because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           tmp_dir="$(mktemp -d)"
           trap 'rm -rf "$tmp_dir"' EXIT
-          gh release download "$GITHUB_REF_NAME" \
+          gh release download "$RELEASE_TAG" \
             --pattern 'CLIProxyAPI_*.tar.gz' \
             --pattern 'CLIProxyAPI_*.zip' \
             --dir "$tmp_dir" \
@@ -431,11 +447,13 @@ jobs:
               shasum -a 256 "${archives[@]}" | sort -k2 > checksums.txt
             fi
           )
-          gh release upload "$GITHUB_REF_NAME" "$tmp_dir/checksums.txt" --clobber
+          gh release upload "$RELEASE_TAG" "$tmp_dir/checksums.txt" --clobber
 
   build-linux-no-plugin:
     name: build linux-${{ matrix.goarch }} no-plugin
     needs: prepare-release
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -480,7 +498,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_version_raw="${GITHUB_REF_NAME#v}"
+          release_version_raw="${RELEASE_TAG#v}"
           release_version="${release_version_raw//\//-}"
           echo "RELEASE_VERSION=${release_version}" >> "$GITHUB_ENV"
           echo "COMMIT=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
@@ -526,10 +544,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping GitHub release upload because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           shopt -s nullglob
           assets=(dist/CLIProxyAPI_*.tar.gz)
@@ -538,7 +552,7 @@ jobs:
             printf '%s\n' "${assets[@]}" >&2
             exit 1
           fi
-          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
       - name: Refresh release checksums
         continue-on-error: true
@@ -548,14 +562,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping release checksum refresh because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           tmp_dir="$(mktemp -d)"
           trap 'rm -rf "$tmp_dir"' EXIT
-          gh release download "$GITHUB_REF_NAME" \
+          gh release download "$RELEASE_TAG" \
             --pattern 'CLIProxyAPI_*.tar.gz' \
             --pattern 'CLIProxyAPI_*.zip' \
             --dir "$tmp_dir" \
@@ -574,13 +584,14 @@ jobs:
               shasum -a 256 "${archives[@]}" | sort -k2 > checksums.txt
             fi
           )
-          gh release upload "$GITHUB_REF_NAME" "$tmp_dir/checksums.txt" --clobber
+          gh release upload "$RELEASE_TAG" "$tmp_dir/checksums.txt" --clobber
 
   build-freebsd:
     name: build ${{ matrix.target }}
     needs: prepare-release
     runs-on: ubuntu-latest
     env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
       TARGET: ${{ matrix.target }}
       TARGET_GOARCH: ${{ matrix.goarch }}
       ASSET_ARCH: ${{ matrix.asset_arch }}
@@ -633,7 +644,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release_version_raw="${GITHUB_REF_NAME#v}"
+          release_version_raw="${RELEASE_TAG#v}"
           release_version="${release_version_raw//\//-}"
           commit="$(git rev-parse --short HEAD)"
           build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -758,10 +769,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping GitHub release upload because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           shopt -s nullglob
           assets=(dist/CLIProxyAPI_*.tar.gz)
@@ -770,7 +777,7 @@ jobs:
             printf '%s\n' "${assets[@]}" >&2
             exit 1
           fi
-          gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
       - name: Refresh release checksums
         continue-on-error: true
@@ -780,14 +787,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping release checksum refresh because '$GITHUB_REF_NAME' is not a tag."
-            exit 0
-          fi
 
           tmp_dir="$(mktemp -d)"
           trap 'rm -rf "$tmp_dir"' EXIT
-          gh release download "$GITHUB_REF_NAME" \
+          gh release download "$RELEASE_TAG" \
             --pattern 'CLIProxyAPI_*.tar.gz' \
             --pattern 'CLIProxyAPI_*.zip' \
             --dir "$tmp_dir" \
@@ -806,12 +809,15 @@ jobs:
               shasum -a 256 "${archives[@]}" | sort -k2 > checksums.txt
             fi
           )
-          gh release upload "$GITHUB_REF_NAME" "$tmp_dir/checksums.txt" --clobber
+          gh release upload "$RELEASE_TAG" "$tmp_dir/checksums.txt" --clobber
 
   publish-checksums:
     runs-on: ubuntu-latest
     if: always()
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     needs:
+      - prepare-release
       - build-hosted
       - build-linux-glibc
       - build-linux-no-plugin
@@ -829,8 +835,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$GITHUB_REF_NAME" != v* ]]; then
-            echo "Skipping final checksum publication because '$GITHUB_REF_NAME' is not a tag."
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "No release tag resolved; skipping."
             exit 0
           fi
 
@@ -842,4 +848,4 @@ jobs:
             exit 0
           fi
           sha256sum "${archives[@]}" | sort -k2 > checksums.txt
-          gh release upload "$GITHUB_REF_NAME" checksums.txt --clobber
+          gh release upload "$RELEASE_TAG" checksums.txt --clobber
