@@ -362,7 +362,11 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 
 	fmt.Println("Initializing Antigravity authentication...")
 
-	authSvc := antigravity.NewAntigravityAuth(h.cfg, nil)
+	oauthClient := antigravity.SelectLoginOAuthClient(h.cfg)
+	authSvc := antigravity.NewAntigravityAuth(h.cfg, nil).WithOAuthClient(oauthClient)
+	if oauthClient.IsLegacy() {
+		log.Info("antigravity: using legacy OAuth client for this login (personal account)")
+	}
 
 	state, errState := misc.GenerateRandomState()
 	if errState != nil {
@@ -481,6 +485,13 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 				log.Infof("antigravity: obtained project ID %s", util.HideAPIKey(projectID))
 			}
 		}
+		if projectID == "" {
+			if errFallback := antigravity.HandleEmptyDiscovery(h.cfg, oauthClient); errFallback != nil {
+				log.Warn(errFallback.Error())
+				SetOAuthSessionError(state, "No Gemini Enterprise license or project found. Personal account detected: please log in again, the next login will use the legacy OAuth client.")
+				return
+			}
+		}
 
 		now := time.Now()
 		metadata := map[string]any{
@@ -503,6 +514,7 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 		if region != "" {
 			metadata["region"] = region
 		}
+		antigravity.ApplyOAuthClientMetadata(metadata, oauthClient)
 
 		fileName := antigravity.CredentialFileName(email)
 		label := strings.TrimSpace(email)

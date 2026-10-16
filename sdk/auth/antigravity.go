@@ -48,7 +48,11 @@ func (AntigravityAuthenticator) Login(ctx context.Context, cfg *config.Config, o
 		callbackPort = opts.CallbackPort
 	}
 
-	authSvc := antigravity.NewAntigravityAuth(cfg, nil)
+	oauthClient := antigravity.SelectLoginOAuthClient(cfg)
+	authSvc := antigravity.NewAntigravityAuth(cfg, nil).WithOAuthClient(oauthClient)
+	if oauthClient.IsLegacy() {
+		fmt.Println("Using legacy Antigravity OAuth client (personal account)")
+	}
 
 	state, err := misc.GenerateRandomState()
 	if err != nil {
@@ -191,6 +195,12 @@ waitForCallback:
 		log.Infof("antigravity: obtained project ID %s", util.HideAPIKey(projectID))
 	}
 	if projectID == "" {
+		if errFallback := antigravity.HandleEmptyDiscovery(cfg, oauthClient); errFallback != nil {
+			// Personal account on the enterprise client: retry once with the legacy client
+			// (SelectLoginOAuthClient consumes the flag armed by HandleEmptyDiscovery).
+			fmt.Println("No Gemini Enterprise license or project found; retrying login with the legacy OAuth client for personal accounts...")
+			return AntigravityAuthenticator{}.Login(ctx, cfg, opts)
+		}
 		return nil, fmt.Errorf("antigravity: project ID discovery returned empty project")
 	}
 
@@ -214,6 +224,7 @@ waitForCallback:
 		if region != "" {
 			authRecord.Metadata["region"] = region
 		}
+		antigravity.ApplyOAuthClientMetadata(authRecord.Metadata, oauthClient)
 	}
 	return authRecord, nil
 }

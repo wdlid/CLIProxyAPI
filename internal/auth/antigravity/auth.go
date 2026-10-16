@@ -55,6 +55,7 @@ func (e *HTTPStatusError) StatusCode() int {
 // AntigravityAuth handles Antigravity OAuth authentication
 type AntigravityAuth struct {
 	httpClient *http.Client
+	client     OAuthClient
 }
 
 // NewAntigravityAuth creates a new Antigravity auth service.
@@ -163,7 +164,7 @@ func (o *AntigravityAuth) BuildAuthURL(state, redirectURI string) (authURL, code
 	}
 	params := url.Values{}
 	params.Set("access_type", "offline")
-	params.Set("client_id", ClientID)
+	params.Set("client_id", o.oauthClient().ID)
 	params.Set("code_challenge", pkce.CodeChallenge)
 	params.Set("code_challenge_method", "S256")
 	params.Set("prompt", "consent")
@@ -180,8 +181,9 @@ func (o *AntigravityAuth) BuildAuthURL(state, redirectURI string) (authURL, code
 func (o *AntigravityAuth) ExchangeCodeForTokens(ctx context.Context, code, redirectURI, codeVerifier string) (*TokenResponse, error) {
 	data := url.Values{}
 	data.Set("code", code)
-	data.Set("client_id", ClientID)
-	data.Set("client_secret", ClientSecret)
+	client := o.oauthClient()
+	data.Set("client_id", client.ID)
+	data.Set("client_secret", client.Secret)
 	data.Set("redirect_uri", redirectURI)
 	data.Set("grant_type", "authorization_code")
 	if codeVerifier != "" {
