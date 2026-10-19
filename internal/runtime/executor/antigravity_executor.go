@@ -40,7 +40,7 @@ const (
 	antigravityGeneratePath                = "/v1internal:generateContent"
 	antigravityAuthType                    = "antigravity"
 	antigravityRequestTokenSafetyWindow    = 5 * time.Minute
-	antigravityCreditsHintRefreshInterval  = 10 * time.Minute
+	antigravityCreditsHintRefreshInterval  = cliproxyauth.AntigravityCreditsHintRefreshInterval
 	antigravityCreditsHintRefreshTimeout   = 5 * time.Second
 	antigravityShortQuotaCooldownThreshold = 5 * time.Minute
 	antigravityInstantRetryThreshold       = 3 * time.Second
