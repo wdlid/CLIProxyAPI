@@ -395,13 +395,12 @@ func (o *AntigravityAuth) FetchProjectIDWithTier(ctx context.Context, accessToke
 		return ProjectDiscoveryResult{}, fmt.Errorf("marshal request body: %w", errMarshal)
 	}
 
-	endpointURL := fmt.Sprintf("%s/%s:loadCodeAssist", APIEndpoint, APIVersion)
+	endpointURL := fmt.Sprintf("%s/%s:loadCodeAssist", DailyAPIEndpoint, APIVersion)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, strings.NewReader(string(rawBody)))
 	if err != nil {
 		return ProjectDiscoveryResult{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 

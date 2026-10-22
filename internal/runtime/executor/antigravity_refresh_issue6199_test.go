@@ -60,7 +60,7 @@ func TestIssue6199AntigravitySharedOAuthHasIndependentAcquisitionDeadline(t *tes
 				case <-release:
 					return issue6199AntigravityJSONResponse(req, `{"access_token":"new-access","expires_in":3600}`), nil
 				}
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				return issue6199AntigravityJSONResponse(req, `{"paidTier":{"id":"tier","availableCredits":[]}}`), nil
 			default:
 				return nil, fmt.Errorf("unexpected intercepted request: %s", req.URL)
@@ -136,7 +136,7 @@ func TestIssue6199AntigravityRefreshPublishesTokenWithoutWaitingForCredits(t *te
 			case "https://oauth2.googleapis.com/token":
 				tokenCalls++
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"new-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				creditsCalls++
 				select {
 				case <-releaseCredits:
@@ -197,7 +197,7 @@ func TestIssue6199AntigravityProjectAcquisitionHasDeadline(t *testing.T) {
 		switch req.URL.String() {
 		case "https://businessaicode.googleapis.com/v1beta:fetchLicenses":
 			return issue6199AntigravityJSONResponse(req, `{"licenses":[]}`), nil
-		case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+		case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 			return issue6199AntigravityJSONResponse(req, `{"cloudaicompanionProject":"acquired-project"}`), nil
 		default:
 			return nil, fmt.Errorf("unexpected intercepted request: %s", req.URL)
@@ -220,7 +220,7 @@ func TestIssue6199AntigravityOptionalCreditsRefreshIsDeduplicatedWithoutDeadline
 			switch req.URL.String() {
 			case "https://oauth2.googleapis.com/token":
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"new-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				creditsCalls++
 				if _, ok := req.Context().Deadline(); ok {
 					t.Error("optional credits lookup inherited a network deadline from token acquisition")
@@ -323,7 +323,7 @@ func TestIssue6199AntigravityCreditsRecoverAfterLifecycleCancellation(t *testing
 			switch req.URL.String() {
 			case "https://oauth2.googleapis.com/token":
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"old-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				oldRequest = req.Context()
 				select {
 				case <-req.Context().Done():
@@ -366,7 +366,7 @@ func TestIssue6199AntigravityCreditsRecoverAfterLifecycleCancellation(t *testing
 			switch req.URL.String() {
 			case "https://oauth2.googleapis.com/token":
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"healthy-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				healthyCalls++
 				if _, ok := req.Context().Deadline(); ok {
 					t.Error("healthy optional credits request acquired a network deadline")
@@ -398,7 +398,7 @@ func TestIssue6199AntigravityCreditsReplaceOldRegistrationEpoch(t *testing.T) {
 			switch req.URL.String() {
 			case "https://oauth2.googleapis.com/token":
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"old-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				oldRequest = req.Context()
 				select {
 				case <-req.Context().Done():
@@ -423,7 +423,7 @@ func TestIssue6199AntigravityCreditsReplaceOldRegistrationEpoch(t *testing.T) {
 			switch req.URL.String() {
 			case "https://oauth2.googleapis.com/token":
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"replacement-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				healthyCalls++
 				if _, ok := req.Context().Deadline(); ok {
 					t.Error("replacement optional credits request acquired a network deadline")
@@ -468,7 +468,7 @@ func TestIssue6199AntigravityCanceledCreditsCannotOverwriteReplacementBalance(t 
 			switch req.URL.String() {
 			case "https://oauth2.googleapis.com/token":
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"old-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				oldRequest = req.Context()
 				// Emulate a transport that returns a successful response after cancellation.
 				<-releaseOld
@@ -488,7 +488,7 @@ func TestIssue6199AntigravityCanceledCreditsCannotOverwriteReplacementBalance(t 
 		synctest.Wait()
 		healthyCalls := 0
 		healthyTransport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-			if req.URL.String() != "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist" {
+			if req.URL.String() != "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist" {
 				return nil, fmt.Errorf("unexpected intercepted request: %s", req.URL)
 			}
 			healthyCalls++
@@ -522,7 +522,7 @@ func TestIssue6199AntigravityCanceledCreditsRetryWithoutOldThrottle(t *testing.T
 			switch req.URL.String() {
 			case "https://oauth2.googleapis.com/token":
 				return issue6199AntigravityJSONResponse(req, `{"access_token":"new-access","expires_in":3600}`), nil
-			case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 				if oldRequest == nil {
 					oldRequest = req.Context()
 					select {
@@ -567,7 +567,7 @@ func TestIssue6199AntigravityOlderEpochCannotReplaceCompletedCredits(t *testing.
 				switch req.URL.String() {
 				case "https://oauth2.googleapis.com/token":
 					return issue6199AntigravityJSONResponse(req, `{"access_token":"new-access","expires_in":3600}`), nil
-				case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+				case "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
 					*calls++
 					return issue6199CreditsBalanceResponse(req, amount), nil
 				default:
