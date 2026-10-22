@@ -39,7 +39,7 @@ func (e *AntigravityExecutor) ShouldPrepareRequestAuth(auth *cliproxyauth.Auth) 
 	if auth == nil {
 		return false
 	}
-	return antigravityProjectIDFromAuth(auth) == "" || antigravityEnterpriseTier(auth) == ""
+	return antigravityProjectIDFromAuth(auth) == ""
 }
 
 func (e *AntigravityExecutor) PrepareRequestAuth(ctx context.Context, auth *cliproxyauth.Auth) (*cliproxyauth.Auth, error) {
@@ -154,12 +154,7 @@ func (e *AntigravityExecutor) refreshToken(ctx context.Context, auth *cliproxyau
 	auth.Metadata["timestamp"] = now.UnixMilli()
 	auth.Metadata["expired"] = now.Add(time.Duration(tokenResp.ExpiresIn) * time.Second).Format(time.RFC3339)
 	auth.Metadata["type"] = antigravityAuthType
-	// On refresh, periodically re-check license/project discovery if not an enterprise tier yet
-	if !isAntigravityEnterpriseTier(auth) {
-		if _, errFetch := e.fetchAntigravityProjectID(ctx, auth, tokenResp.AccessToken); errFetch != nil {
-			log.Warnf("antigravity executor: refresh project id/tier check failed: %v", errFetch)
-		}
-	} else if errProject := e.ensureAntigravityProjectID(ctx, auth, tokenResp.AccessToken); errProject != nil {
+	if errProject := e.ensureAntigravityProjectID(ctx, auth, tokenResp.AccessToken); errProject != nil {
 		log.Warnf("antigravity executor: ensure project id failed: %v", errProject)
 	}
 	e.queueAntigravityCreditsRefresh(ctx, auth, tokenResp.AccessToken, 0)

@@ -228,7 +228,7 @@ func ConvertAntigravityResponseToOpenAI(_ context.Context, _ string, originalReq
 	// strict clients drop the remaining content. When upstream never sends
 	// finishReason at all, the [DONE] branch synthesizes the terminal chunk.
 	usageMetadata := gjson.GetBytes(rawJSON, "response.usageMetadata")
-	isFinalChunk := params.UpstreamFinishReason != "" && usageMetadata.Exists()
+	isFinalChunk := params.UpstreamFinishReason != "" && usageMetadata.Exists() && !params.SawFinishReason
 
 	if isFinalChunk {
 		finishReason, nativeFinishReason := resolveOpenAIFinishReason(params)

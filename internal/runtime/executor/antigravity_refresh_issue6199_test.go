@@ -191,13 +191,17 @@ func TestIssue6199AntigravityProjectAcquisitionHasDeadline(t *testing.T) {
 	delete(auth.Metadata, "project_id")
 	auth.Metadata["expired"] = time.Now().Add(time.Hour).Format(time.RFC3339)
 	transport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		if req.URL.String() != "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist" {
-			return nil, fmt.Errorf("unexpected intercepted request: %s", req.URL)
-		}
 		if deadline, ok := req.Context().Deadline(); !ok || !deadline.After(time.Now()) {
 			t.Error("required project acquisition has no finite credential-acquisition deadline")
 		}
-		return issue6199AntigravityJSONResponse(req, `{"cloudaicompanionProject":"acquired-project"}`), nil
+		switch req.URL.String() {
+		case "https://businessaicode.googleapis.com/v1beta:fetchLicenses":
+			return issue6199AntigravityJSONResponse(req, `{"licenses":[]}`), nil
+		case "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist":
+			return issue6199AntigravityJSONResponse(req, `{"cloudaicompanionProject":"acquired-project"}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected intercepted request: %s", req.URL)
+		}
 	})
 	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", transport)
 	executor := &AntigravityExecutor{}

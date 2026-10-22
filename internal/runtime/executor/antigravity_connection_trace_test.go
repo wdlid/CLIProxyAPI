@@ -39,6 +39,8 @@ func TestAntigravityProjectDiscoveryConnectionTrace(t *testing.T) {
 		trace.GotConn(httptrace.GotConnInfo{})
 		var body string
 		switch req.URL.Path {
+		case "/v1beta:fetchLicenses":
+			body = `{"licenses":[]}`
 		case "/v1internal:loadCodeAssist":
 			body = `{"allowedTiers":[{"id":"free-tier","isDefault":true}]}`
 		case "/v1internal:onboardUser":
@@ -53,7 +55,7 @@ func TestAntigravityProjectDiscoveryConnectionTrace(t *testing.T) {
 	if errFetch != nil {
 		t.Fatal(errFetch)
 	}
-	if projectID != "trace-project" || requests != 2 {
+	if projectID != "trace-project" || requests != 3 {
 		t.Fatalf("project=%q requests=%d", projectID, requests)
 	}
 	var entries []*log.Entry
@@ -62,10 +64,10 @@ func TestAntigravityProjectDiscoveryConnectionTrace(t *testing.T) {
 			entries = append(entries, entry)
 		}
 	}
-	if len(entries) != 2 {
-		t.Fatalf("connection entries=%d, want 2", len(entries))
+	if len(entries) != 3 {
+		t.Fatalf("connection entries=%d, want 3", len(entries))
 	}
-	for i, host := range []string{"cloudcode-pa.googleapis.com", "daily-cloudcode-pa.googleapis.com"} {
+	for i, host := range []string{"businessaicode.googleapis.com", "cloudcode-pa.googleapis.com", "daily-cloudcode-pa.googleapis.com"} {
 		fields := entries[i].Data
 		if fields["operation"] != "project_discovery" || fields["request_id"] != "discovery-request-id" || fields["auth_index"] != "discovery-index" || fields["upstream_host"] != host {
 			t.Fatalf("unexpected trace fields: %v", fields)

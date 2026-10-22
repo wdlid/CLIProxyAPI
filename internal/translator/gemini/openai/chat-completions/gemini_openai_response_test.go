@@ -159,6 +159,104 @@ func TestConvertGeminiResponseToOpenAI_PinsSanitizedNameMapPerStream(t *testing.
 	}
 }
 
+func TestConvertGeminiResponseToOpenAI_SynthesizesFinishReasonOnDoneWhenOmitted(t *testing.T) {
+	ctx := context.Background()
+	var param any
+
+	// Tool call chunk with usageMetadata (or filtered cpaUsageMetadata) but no finishReason.
+	filtered := []byte(`{"candidates":[{"content":{"parts":[{"thoughtSignature":"sig","functionCall":{"name":"bash","args":{"command":"ls -la"},"id":"call_1"}}],"role":"model"}}],"modelVersion":"gemini-4-argon-high","responseId":"resp-baic-nofr","cpaUsageMetadata":{"promptTokenCount":120,"candidatesTokenCount":15,"thoughtsTokenCount":30,"totalTokenCount":165}}`)
+	result := ConvertGeminiResponseToOpenAI(ctx, "gemini-4-argon-high", nil, nil, filtered, &param)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 intermediate chunk, got %d", len(result))
+	}
+	if fr := gjson.GetBytes(result[0], "choices.0.finish_reason").String(); fr != "" {
+		t.Fatalf("intermediate finish_reason = %q, want empty/null", fr)
+	}
+	if usage := gjson.GetBytes(result[0], "usage"); usage.Exists() {
+		t.Fatalf("intermediate filtered usage must not be emitted before terminal: %s", usage.Raw)
+	}
+
+	done := ConvertGeminiResponseToOpenAI(ctx, "gemini-4-argon-high", nil, nil, []byte("[DONE]"), &param)
+	if len(done) != 1 {
+		t.Fatalf("expected 1 synthesized terminal chunk on [DONE], got %d", len(done))
+	}
+	if fr := gjson.GetBytes(done[0], "choices.0.finish_reason").String(); fr != "tool_calls" {
+		t.Fatalf("terminal finish_reason = %q, want tool_calls", fr)
+	}
+	if got := gjson.GetBytes(done[0], "usage.prompt_tokens").Int(); got != 120 {
+		t.Fatalf("terminal prompt_tokens = %d, want 120", got)
+	}
+	if got := gjson.GetBytes(done[0], "usage.completion_tokens").Int(); got != 45 {
+		t.Fatalf("terminal completion_tokens = %d, want 45", got)
+	}
+	if got := gjson.GetBytes(done[0], "usage.total_tokens").Int(); got != 165 {
+		t.Fatalf("terminal total_tokens = %d, want 165", got)
+	}
+	if got := gjson.GetBytes(done[0], "model").String(); got != "gemini-4-argon-high" {
+		t.Fatalf("terminal model = %q, want gemini-4-argon-high", got)
+	}
+	if got := gjson.GetBytes(done[0], "id").String(); got != "resp-baic-nofr" {
+		t.Fatalf("terminal id = %q, want resp-baic-nofr", got)
+	}
+}
+
+func TestConvertGeminiResponseToOpenAI_SplitFinishReasonAndPureUsageChunk(t *testing.T) {
+	ctx := context.Background()
+	var param any
+
+	chunk1 := []byte(`{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],"modelVersion":"gemini-4-argon-high","responseId":"resp-split-pure"}`)
+	res1 := ConvertGeminiResponseToOpenAI(ctx, "gemini-4-argon-high", nil, nil, chunk1, &param)
+	if len(res1) != 1 {
+		t.Fatalf("expected 1 result from chunk1, got %d", len(res1))
+	}
+	if fr := gjson.GetBytes(res1[0], "choices.0.finish_reason").String(); fr != "" {
+		t.Fatalf("chunk1 finish_reason = %q, want empty before usage arrives", fr)
+	}
+
+	// Pure usageMetadata chunk without candidates array
+	chunk2 := []byte(`{"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"totalTokenCount":15},"modelVersion":"gemini-4-argon-high","responseId":"resp-split-pure"}`)
+	res2 := ConvertGeminiResponseToOpenAI(ctx, "gemini-4-argon-high", nil, nil, chunk2, &param)
+	if len(res2) != 1 {
+		t.Fatalf("expected 1 result from chunk2, got %d", len(res2))
+	}
+	if fr := gjson.GetBytes(res2[0], "choices.0.finish_reason").String(); fr != "stop" {
+		t.Fatalf("chunk2 finish_reason = %q, want stop", fr)
+	}
+	if got := gjson.GetBytes(res2[0], "usage.total_tokens").Int(); got != 15 {
+		t.Fatalf("chunk2 total_tokens = %d, want 15", got)
+	}
+
+	// Subsequent [DONE] must not emit a duplicate finish_reason chunk
+	done := ConvertGeminiResponseToOpenAI(ctx, "gemini-4-argon-high", nil, nil, []byte("[DONE]"), &param)
+	if len(done) != 0 {
+		t.Fatalf("expected 0 chunks on [DONE] after finish_reason already emitted, got %d", len(done))
+	}
+}
+
+func TestConvertGeminiResponseToOpenAI_UnwrapsResponseEnvelopeAndHandlesEmptyStream(t *testing.T) {
+	ctx := context.Background()
+
+	// Empty stream must not synthesize finish_reason on [DONE]
+	var emptyParam any
+	if done := ConvertGeminiResponseToOpenAI(ctx, "gemini-4-argon-high", nil, nil, []byte("[DONE]"), &emptyParam); len(done) != 0 {
+		t.Fatalf("empty stream must not synthesize terminal chunk, got %d", len(done))
+	}
+
+	// Wrapped {"response": ...} envelope
+	var wrappedParam any
+	wrapped := []byte(`{"response":{"candidates":[{"content":{"parts":[{"text":"wrapped hello"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":2,"totalTokenCount":6},"modelVersion":"gemini-4-argon-high","responseId":"resp-wrapped"}}`)
+	res := ConvertGeminiResponseToOpenAI(ctx, "gemini-4-argon-high", nil, nil, wrapped, &wrappedParam)
+	if len(res) != 1 {
+		t.Fatalf("expected 1 chunk, got %d", len(res))
+	}
+	if got := gjson.GetBytes(res[0], "choices.0.delta.content").String(); got != "wrapped hello" {
+		t.Fatalf("delta.content = %q, want wrapped hello", got)
+	}
+	if fr := gjson.GetBytes(res[0], "choices.0.finish_reason").String(); fr != "stop" {
+		t.Fatalf("finish_reason = %q, want stop", fr)
+	}
+}
+
 func BenchmarkConvertGeminiResponseToOpenAI_TextDelta(b *testing.B) {
 	request := []byte(`{"model":"gemini-2.5-flash","messages":[{"role":"user","content":"` + strings.Repeat("x", 1024*1024) + `"}]}`)
 	delta := []byte(`{"candidates":[{"content":{"parts":[{"text":"token "}]}}],"modelVersion":"gemini-2.5-flash","responseId":"resp_bench"}`)

@@ -323,3 +323,85 @@ func TestAntigravityStreamSynthesizesOpenAIToolCallsFinishReason(t *testing.T) {
 		t.Fatalf("expected exactly one finish_reason chunk, got %d", finishReasonCount)
 	}
 }
+
+func TestAntigravityBAICStreamSynthesizesOpenAIToolCallsFinishReason(t *testing.T) {
+	const baicToolCallNoFinishReasonSSE = `data: {"candidates":[{"content":{"parts":[{"thoughtSignature":"CqcECqQEARFNMg8iZ3xVniKaulgBlzhJJDlc","functionCall":{"name":"bash","args":{"command":"ls -la .."},"id":"call_524881"}}],"role":"model"}}],"modelVersion":"gemini-4-argon-high","responseId":"resp-baic-nofr","usageMetadata":{"promptTokenCount":153609,"candidatesTokenCount":17,"totalTokenCount":153720,"thoughtsTokenCount":94}}
+
+`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, baicToolCallNoFinishReasonSSE)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}))
+	defer server.Close()
+
+	target, errParse := parseTestURL(t, server.URL)
+	if errParse != nil {
+		t.Fatal(errParse)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	t.Cleanup(transport.CloseIdleConnections)
+	ctx := context.WithValue(context.Background(), "cliproxy.roundtripper", issue6258RedirectTransport{target: target, base: transport})
+
+	executor := NewAntigravityExecutor(&config.Config{
+		Antigravity:  config.AntigravityConfig{},
+		RequestRetry: 1,
+	})
+	result, errExecute := executor.ExecuteStream(ctx, &cliproxyauth.Auth{
+		Metadata: map[string]any{
+			"access_token": "token-123",
+			"expired":      time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+			"project_id":   "project-1",
+			"user_tier":    "gcp-ge-plus-tier",
+			"region":       "global",
+		},
+	}, cliproxyexecutor.Request{
+		Model:   "gemini-4-argon-high",
+		Payload: []byte(`{"model":"gemini-4-argon-high","messages":[{"role":"user","content":"hello"}],"stream":true}`),
+	}, cliproxyexecutor.Options{
+		SourceFormat:   sdktranslator.FormatOpenAI,
+		ResponseFormat: sdktranslator.FormatOpenAI,
+		Stream:         true,
+	})
+	if errExecute != nil {
+		t.Fatalf("ExecuteStream() error = %v", errExecute)
+	}
+
+	var chunks [][]byte
+	for chunk := range result.Chunks {
+		if chunk.Err != nil {
+			t.Fatalf("unexpected stream error: %v", chunk.Err)
+		}
+		chunks = append(chunks, chunk.Payload)
+	}
+	if len(chunks) == 0 {
+		t.Fatal("expected at least one chunk")
+	}
+
+	terminal := chunks[len(chunks)-1]
+	if fr := gjson.GetBytes(terminal, "choices.0.finish_reason").String(); fr != "tool_calls" {
+		t.Fatalf("terminal finish_reason = %q, want tool_calls", fr)
+	}
+	if got := gjson.GetBytes(terminal, "usage.total_tokens").Int(); got != 153720 {
+		t.Fatalf("terminal total_tokens = %d, want 153720", got)
+	}
+	if got := gjson.GetBytes(terminal, "usage.prompt_tokens").Int(); got != 153609 {
+		t.Fatalf("terminal prompt_tokens = %d, want 153609", got)
+	}
+	if got := gjson.GetBytes(terminal, "model").String(); got != "gemini-4-argon-high" {
+		t.Fatalf("terminal model = %q, want gemini-4-argon-high", got)
+	}
+
+	var finishReasonCount int
+	for _, chunk := range chunks {
+		if gjson.GetBytes(chunk, "choices.0.finish_reason").String() != "" {
+			finishReasonCount++
+		}
+	}
+	if finishReasonCount != 1 {
+		t.Fatalf("expected exactly one finish_reason chunk, got %d", finishReasonCount)
+	}
+}
