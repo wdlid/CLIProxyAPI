@@ -16,7 +16,7 @@ permissions:
 
 env:
   GH_REPO: ${{ github.repository }}
-  GO_VERSION: '1.26.4'
+  GO_VERSION: '1.26.10'
   GITHUB_REF_NAME: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ref || github.ref_name }}
 
 jobs:

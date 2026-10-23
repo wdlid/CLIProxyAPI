@@ -56,8 +56,9 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 		return
 	}
 
+	cfg := h.configSnapshot()
 	// Initialize Claude auth service
-	anthropicAuth := claude.NewClaudeAuth(h.cfg)
+	anthropicAuth := claude.NewClaudeAuth(cfg)
 
 	// Generate authorization URL (then override redirect_uri to reuse server port)
 	authURL, state, err := anthropicAuth.GenerateAuthURL(state, pkceCodes)
@@ -92,7 +93,7 @@ func (h *Handler) RequestAnthropicToken(c *gin.Context) {
 		}
 
 		// Helper: wait for callback file
-		waitFile := filepath.Join(h.cfg.AuthDir, fmt.Sprintf(".oauth-anthropic-%s.oauth", state))
+		waitFile := filepath.Join(cfg.AuthDir, fmt.Sprintf(".oauth-anthropic-%s.oauth", state))
 		waitForFile := func(path string, timeout time.Duration) (map[string]string, error) {
 			deadline := time.Now().Add(timeout)
 			for {
@@ -217,8 +218,9 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 		return
 	}
 
+	cfg := h.configSnapshot()
 	// Initialize Codex auth service
-	openaiAuth := newCodexOAuthService(h.cfg)
+	openaiAuth := newCodexOAuthService(cfg)
 
 	// Generate authorization URL
 	authURL, err := openaiAuth.GenerateAuthURL(state, pkceCodes)
@@ -253,7 +255,7 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 		}
 
 		// Wait for callback file
-		waitFile := filepath.Join(h.cfg.AuthDir, fmt.Sprintf(".oauth-codex-%s.oauth", state))
+		waitFile := filepath.Join(cfg.AuthDir, fmt.Sprintf(".oauth-codex-%s.oauth", state))
 		deadline := time.Now().Add(5 * time.Minute)
 		var code string
 		for {
@@ -381,8 +383,9 @@ func (h *Handler) requestAntigravityTokenWithClientMode(c *gin.Context, modeOver
 
 	fmt.Println("Initializing Antigravity authentication...")
 
-	oauthClient := antigravity.SelectLoginOAuthClientWithOverride(h.cfg, modeOverride)
-	authSvc := antigravity.NewAntigravityAuth(h.cfg, nil).WithOAuthClient(oauthClient)
+	cfg := h.configSnapshot()
+	oauthClient := antigravity.SelectLoginOAuthClientWithOverride(cfg, modeOverride)
+	authSvc := antigravity.NewAntigravityAuth(cfg, nil).WithOAuthClient(oauthClient)
 	if oauthClient.IsLegacy() {
 		log.Info("antigravity: using legacy OAuth client for this login (personal account)")
 	} else {
@@ -428,7 +431,7 @@ func (h *Handler) requestAntigravityTokenWithClientMode(c *gin.Context, modeOver
 			defer stopCallbackForwarderInstance(antigravity.CallbackPort, forwarder)
 		}
 
-		waitFile := filepath.Join(h.cfg.AuthDir, fmt.Sprintf(".oauth-antigravity-%s.oauth", state))
+		waitFile := filepath.Join(cfg.AuthDir, fmt.Sprintf(".oauth-antigravity-%s.oauth", state))
 		deadline := time.Now().Add(5 * time.Minute)
 		var authCode string
 		for {
@@ -507,7 +510,7 @@ func (h *Handler) requestAntigravityTokenWithClientMode(c *gin.Context, modeOver
 			}
 		}
 		if projectID == "" {
-			if errFallback := antigravity.HandleEmptyDiscoveryWithOverride(h.cfg, oauthClient, modeOverride); errFallback != nil {
+			if errFallback := antigravity.HandleEmptyDiscoveryWithOverride(cfg, oauthClient, modeOverride); errFallback != nil {
 				log.Warn(errFallback.Error())
 				if errors.Is(errFallback, antigravity.ErrEnterpriseAccountNeedsEnterpriseClient) {
 					SetOAuthSessionError(state, "No GCP project found with the personal OAuth client. Enterprise account detected: please log in again, the next login will use the enterprise OAuth client.")
