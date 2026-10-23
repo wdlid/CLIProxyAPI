@@ -1121,8 +1121,8 @@ oauth:
       #   idle-conn-timeout: "30s"    # idle keep-alive timeout (default: 30s, capped at 210s)
       #   max-idle-conns-per-host: 2  # max idle connections per host per credential (default: 2)
       # oauth-client: auto            # OAuth client for new logins: auto | enterprise | legacy
-      #                               # auto: enterprise client; personal accounts with no license/project
-      #                               # fail once and the next login uses the legacy client.
+      #                               # auto: personal (legacy) client first; if no project is found,
+      #                               # fail once and the next login uses the enterprise client.
       # Use credits as a last resort after free-tier Claude quota is exhausted.
       antigravity-credits: true
 

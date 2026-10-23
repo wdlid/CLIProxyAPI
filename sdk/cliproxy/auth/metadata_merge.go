@@ -45,6 +45,12 @@ func MergeExistingAuthMetadata(target *Auth, existingMap map[string]any) {
 				continue
 			}
 		}
+		if strings.EqualFold(strings.TrimSpace(target.Provider), "antigravity") {
+			switch CanonicalCredentialMetadataKey(k) {
+			case "client_id", "client_secret", "user_tier", "region":
+				continue
+			}
+		}
 		if _, exists := target.Metadata[k]; !exists {
 			target.Metadata[k] = v
 		}

@@ -357,15 +357,36 @@ func (h *Handler) RequestCodexToken(c *gin.Context) {
 }
 
 func (h *Handler) RequestAntigravityToken(c *gin.Context) {
+	modeOverride := firstNonEmpty(
+		c.Query("oauth_client"),
+		c.Query("oauth-client"),
+		c.Query("client"),
+		c.Query("mode"),
+		c.Query("channel"),
+	)
+	h.requestAntigravityTokenWithClientMode(c, modeOverride)
+}
+
+func (h *Handler) RequestAntigravityEnterpriseToken(c *gin.Context) {
+	h.requestAntigravityTokenWithClientMode(c, antigravity.OAuthClientEnterprise)
+}
+
+func (h *Handler) RequestAntigravityLegacyToken(c *gin.Context) {
+	h.requestAntigravityTokenWithClientMode(c, antigravity.OAuthClientLegacy)
+}
+
+func (h *Handler) requestAntigravityTokenWithClientMode(c *gin.Context, modeOverride string) {
 	ctx := context.Background()
 	ctx = PopulateAuthContext(ctx, c)
 
 	fmt.Println("Initializing Antigravity authentication...")
 
-	oauthClient := antigravity.SelectLoginOAuthClient(h.cfg)
+	oauthClient := antigravity.SelectLoginOAuthClientWithOverride(h.cfg, modeOverride)
 	authSvc := antigravity.NewAntigravityAuth(h.cfg, nil).WithOAuthClient(oauthClient)
 	if oauthClient.IsLegacy() {
 		log.Info("antigravity: using legacy OAuth client for this login (personal account)")
+	} else {
+		log.Info("antigravity: using enterprise OAuth client for this login (Gemini Enterprise)")
 	}
 
 	state, errState := misc.GenerateRandomState()
@@ -486,9 +507,13 @@ func (h *Handler) RequestAntigravityToken(c *gin.Context) {
 			}
 		}
 		if projectID == "" {
-			if errFallback := antigravity.HandleEmptyDiscovery(h.cfg, oauthClient); errFallback != nil {
+			if errFallback := antigravity.HandleEmptyDiscoveryWithOverride(h.cfg, oauthClient, modeOverride); errFallback != nil {
 				log.Warn(errFallback.Error())
-				SetOAuthSessionError(state, "No Gemini Enterprise license or project found. Personal account detected: please log in again, the next login will use the legacy OAuth client.")
+				if errors.Is(errFallback, antigravity.ErrEnterpriseAccountNeedsEnterpriseClient) {
+					SetOAuthSessionError(state, "No GCP project found with the personal OAuth client. Enterprise account detected: please log in again, the next login will use the enterprise OAuth client.")
+				} else {
+					SetOAuthSessionError(state, "No Gemini Enterprise license or project found. Personal account detected: please log in again, the next login will use the legacy OAuth client.")
+				}
 				return
 			}
 		}

@@ -111,6 +111,8 @@ func main() {
 	var noBrowser bool
 	var oauthCallbackPort int
 	var antigravityLogin bool
+	var antigravityEnterpriseLogin bool
+	var antigravityPersonalLogin bool
 	var kimiLogin bool
 	var kimiAILogin bool
 	var xaiLogin bool
@@ -141,6 +143,8 @@ func main() {
 	flag.BoolVar(&noBrowser, "no-browser", false, "Don't open browser automatically for OAuth")
 	flag.IntVar(&oauthCallbackPort, "oauth-callback-port", 0, "Override OAuth callback port (defaults to provider-specific port)")
 	flag.BoolVar(&antigravityLogin, "antigravity-login", false, "Login to Antigravity using OAuth")
+	flag.BoolVar(&antigravityEnterpriseLogin, "antigravity-enterprise-login", false, "Login to Antigravity (Gemini Enterprise) using OAuth")
+	flag.BoolVar(&antigravityPersonalLogin, "antigravity-personal-login", false, "Login to Antigravity (Personal) using OAuth")
 	flag.BoolVar(&kimiLogin, "kimi-login", false, "Login to Kimi (.com) using OAuth")
 	flag.BoolVar(&kimiAILogin, "kimi-ai-login", false, "Login to Kimi.ai using OAuth")
 	flag.BoolVar(&xaiLogin, "xai-login", false, "Login to xAI using OAuth")
@@ -658,7 +662,7 @@ func main() {
 		CallbackPort: oauthCallbackPort,
 	}
 
-	commandMode := vertexImport != "" || siwcBind != "" || antigravityLogin || codexLogin || codexDeviceLogin || claudeLogin || kimiLogin || kimiAILogin || xaiLogin || devinLogin || metaLogin
+	commandMode := vertexImport != "" || siwcBind != "" || antigravityLogin || antigravityEnterpriseLogin || antigravityPersonalLogin || codexLogin || codexDeviceLogin || claudeLogin || kimiLogin || kimiAILogin || xaiLogin || devinLogin || metaLogin
 	cloudConfigMissing := isCloudDeploy && !configFileExists
 	homeMode := configLoadedFromHome || (cfg != nil && cfg.Home.Enabled)
 	exampleAPIKeySafeMode := shouldEnableExampleAPIKeySafeMode(cfg, commandMode, tuiMode, standalone, cloudConfigMissing, homeMode)
@@ -719,6 +723,12 @@ func main() {
 	} else if siwcBind != "" {
 		// Handle Sign in with ChatGPT (SIWC) credential binding
 		cmd.DoSIWCBind(cfg, siwcBind, options)
+	} else if antigravityEnterpriseLogin {
+		// Handle Antigravity (Gemini Enterprise) login
+		cmd.DoAntigravityEnterpriseLogin(cfg, options)
+	} else if antigravityPersonalLogin {
+		// Handle Antigravity (Personal) login
+		cmd.DoAntigravityLegacyLogin(cfg, options)
 	} else if antigravityLogin {
 		// Handle Antigravity login
 		cmd.DoAntigravityLogin(cfg, options)
@@ -964,7 +974,8 @@ func argvEnablesBoolFlag(args []string, name string) bool {
 func argvFlagConsumesValue(name string) bool {
 	switch name {
 	case "codex-login", "codex-device-login", "claude-login", "no-browser",
-		"antigravity-login", "kimi-login", "kimi-ai-login", "xai-login", "devin-login", "meta-login",
+		"antigravity-login", "antigravity-enterprise-login", "antigravity-personal-login",
+		"kimi-login", "kimi-ai-login", "xai-login", "devin-login", "meta-login",
 		"discover", "discover-json", "home-disable-cluster-discovery",
 		"tui", "standalone", "local-model":
 		return false

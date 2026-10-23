@@ -11,6 +11,20 @@ import (
 
 // DoAntigravityLogin triggers the OAuth flow for the antigravity provider and saves tokens.
 func DoAntigravityLogin(cfg *config.Config, options *LoginOptions) {
+	doAntigravityLoginWithClientMode(cfg, options, "")
+}
+
+// DoAntigravityEnterpriseLogin triggers the OAuth flow for Antigravity using the enterprise OAuth client.
+func DoAntigravityEnterpriseLogin(cfg *config.Config, options *LoginOptions) {
+	doAntigravityLoginWithClientMode(cfg, options, "enterprise")
+}
+
+// DoAntigravityLegacyLogin triggers the OAuth flow for Antigravity using the legacy (personal) OAuth client.
+func DoAntigravityLegacyLogin(cfg *config.Config, options *LoginOptions) {
+	doAntigravityLoginWithClientMode(cfg, options, "legacy")
+}
+
+func doAntigravityLoginWithClientMode(cfg *config.Config, options *LoginOptions, clientMode string) {
 	if options == nil {
 		options = &LoginOptions{}
 	}
@@ -20,11 +34,16 @@ func DoAntigravityLogin(cfg *config.Config, options *LoginOptions) {
 		promptFn = defaultProjectPrompt()
 	}
 
+	metadata := map[string]string{}
+	if clientMode != "" {
+		metadata["oauth_client"] = clientMode
+	}
+
 	manager := newAuthManager()
 	authOpts := &sdkAuth.LoginOptions{
 		NoBrowser:    options.NoBrowser,
 		CallbackPort: options.CallbackPort,
-		Metadata:     map[string]string{},
+		Metadata:     metadata,
 		Prompt:       promptFn,
 	}
 

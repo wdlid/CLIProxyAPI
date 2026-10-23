@@ -447,6 +447,25 @@ func TestMergeExistingAuthMetadataMetaDoesNotRestoreOldKey(t *testing.T) {
 	}
 }
 
+func TestMergeExistingAuthMetadataAntigravityDoesNotRestoreOldOAuthClient(t *testing.T) {
+	auth := &Auth{Provider: "antigravity", Metadata: map[string]any{"access_token": "new-token", "project_id": "new-proj"}}
+	MergeExistingAuthMetadata(auth, map[string]any{
+		"client_id":     "legacy-client-id",
+		"client_secret": "legacy-client-secret",
+		"user_tier":     "free-tier",
+		"region":        "us",
+		"priority":      2,
+	})
+	for _, key := range []string{"client_id", "client_secret", "user_tier", "region"} {
+		if _, exists := auth.Metadata[key]; exists {
+			t.Fatalf("restored stale Antigravity field %s", key)
+		}
+	}
+	if auth.Metadata["priority"] != 2 || auth.Metadata["project_id"] != "new-proj" {
+		t.Fatalf("incorrect merged metadata: %#v", auth.Metadata)
+	}
+}
+
 func TestMergeRefreshedAndExistingAuthMetadataPreservesSIWC(t *testing.T) {
 	// 1. MergeExistingAuthMetadata must preserve siwc and use_siwc when re-logging into Codex
 	target := &Auth{

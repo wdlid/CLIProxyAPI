@@ -22,7 +22,8 @@ type oauthProvider struct {
 var oauthProviders = []oauthProvider{
 	{"Claude (Anthropic)", "anthropic-auth-url", "🟧", false},
 	{"Codex (OpenAI)", "codex-auth-url", "🟩", false},
-	{"Antigravity", "antigravity-auth-url", "🟪", false},
+	{"Antigravity (Personal)", "antigravity-auth-url?oauth_client=legacy", "🟪", false},
+	{"Antigravity (Enterprise)", "antigravity-auth-url?oauth_client=enterprise", "🟪", false},
 	{"Kimi (kimi.com)", "kimi-auth-url", "🟫", true},
 	{"Kimi (kimi.ai)", "kimi-ai-auth-url", "🟫", true},
 	{"xAI", "xai-auth-url", "⬛", true},
@@ -282,7 +283,11 @@ func (m oauthTabModel) Update(msg tea.Msg) (oauthTabModel, tea.Cmd) {
 func (m oauthTabModel) startOAuth(provider oauthProvider, generation int) tea.Cmd {
 	return func() tea.Msg {
 		// Call the auth URL endpoint with is_webui=true
-		data, err := m.client.getJSON("/v0/management/" + provider.apiPath + "?is_webui=true")
+		sep := "?"
+		if strings.Contains(provider.apiPath, "?") {
+			sep = "&"
+		}
+		data, err := m.client.getJSON("/v0/management/" + provider.apiPath + sep + "is_webui=true")
 		if err != nil {
 			return oauthStartMsg{generation: generation, err: fmt.Errorf("failed to start %s login: %w", provider.name, err)}
 		}
@@ -349,7 +354,8 @@ func (m oauthTabModel) submitCallback(callbackURL string) tea.Cmd {
 		for _, p := range oauthProviders {
 			if p.name == m.providerName {
 				// Map provider name to the canonical key the API expects
-				switch p.apiPath {
+				basePath, _, _ := strings.Cut(p.apiPath, "?")
+				switch basePath {
 				case "anthropic-auth-url":
 					providerKey = "anthropic"
 				case "codex-auth-url":

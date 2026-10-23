@@ -211,9 +211,10 @@ type AntigravityConfig struct {
 	ConnectionPool AntigravityConnectionPoolConfig `yaml:"connection-pool,omitempty" json:"connection-pool,omitempty"`
 
 	// OAuthClient selects which Google OAuth client is used for new Antigravity logins.
-	//   "auto" (default): use the enterprise client; if a login finds neither a Gemini
-	//                     Enterprise license nor a project (typical personal Gmail account),
-	//                     fail that login and use the legacy client for the next attempt.
+	//   "auto" (default): use the legacy (personal) client first so personal accounts work on
+	//                     the first attempt; if a login finds no project (e.g. an enterprise
+	//                     account that requires the enterprise client), fail that login and
+	//                     use the enterprise client for the next attempt.
 	//   "enterprise":     always use the current Antigravity client (Gemini Enterprise / BAIC).
 	//   "legacy":         always use the legacy client (personal / free-tier accounts).
 	OAuthClient string `yaml:"oauth-client,omitempty" json:"oauth-client,omitempty"`

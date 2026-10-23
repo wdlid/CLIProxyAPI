@@ -2,10 +2,13 @@ package antigravity
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/config"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -181,5 +184,48 @@ func jsonResponse(body string) *http.Response {
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func TestSelectLoginOAuthClientDefaultsToLegacyAndFallsBackToEnterprise(t *testing.T) {
+	nextLoginClientOverride.Store("")
+	t.Cleanup(func() { nextLoginClientOverride.Store("") })
+
+	cfg := &config.Config{}
+	client := SelectLoginOAuthClient(cfg)
+	if !client.IsLegacy() {
+		t.Fatalf("expected default auto client to be legacy (personal), got %q", client.ID)
+	}
+
+	errFallback := HandleEmptyDiscovery(cfg, client)
+	if !errors.Is(errFallback, ErrEnterpriseAccountNeedsEnterpriseClient) {
+		t.Fatalf("expected ErrEnterpriseAccountNeedsEnterpriseClient, got %v", errFallback)
+	}
+
+	nextClient := SelectLoginOAuthClient(cfg)
+	if nextClient.IsLegacy() || nextClient.ID != ClientID {
+		t.Fatalf("expected fallback client to be enterprise, got %q", nextClient.ID)
+	}
+
+	// Next login after consuming override returns to default (legacy)
+	afterClient := SelectLoginOAuthClient(cfg)
+	if !afterClient.IsLegacy() {
+		t.Fatalf("expected subsequent client to return to legacy, got %q", afterClient.ID)
+	}
+}
+
+func TestSelectLoginOAuthClientWithOverride(t *testing.T) {
+	nextLoginClientOverride.Store("")
+	t.Cleanup(func() { nextLoginClientOverride.Store("") })
+
+	cfg := &config.Config{}
+	if c := SelectLoginOAuthClientWithOverride(cfg, "enterprise"); c.IsLegacy() || c.ID != ClientID {
+		t.Fatalf("expected enterprise client with override=enterprise, got %q", c.ID)
+	}
+	if c := SelectLoginOAuthClientWithOverride(cfg, "legacy"); !c.IsLegacy() {
+		t.Fatalf("expected legacy client with override=legacy, got %q", c.ID)
+	}
+	if c := SelectLoginOAuthClientWithOverride(cfg, "personal"); !c.IsLegacy() {
+		t.Fatalf("expected legacy client with override=personal, got %q", c.ID)
 	}
 }
